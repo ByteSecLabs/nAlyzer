@@ -11,8 +11,26 @@ import hashlib
 import protocol_dict as protocol_dict
 
 
+srcips = {}
+
+
 def signal_handler(signal, frame):
+    try:
+        sorted_srcips = sorted(srcips.items(), key=lambda t: t[1], reverse=True)
+        wtf('srcip.txt', str(sorted_srcips))
+    except Exception, e:
+        print str(e)
+    print '\nExiting...\n'
     sys.exit(0)
+
+
+def wtf(fname, buff):
+    try:
+        fso = open(fname, 'a')
+        fso.write(buff)
+        fso.close()
+    except Exception, e:
+        print str(e)
 
 
 # MAC Layer
@@ -20,8 +38,6 @@ def parsel2_metadata(packet):
     try:
         header = packet[:14]
         dest_mac, src_mac, proto = unpack('!6s6sH', header)
-        # print 'protocol:', socket.ntohs(proto), format_mac_address(dest_mac), '->', format_mac_address(src_mac)
-        # parseL2(frame[14:])
         return socket.ntohs(proto), format_mac_address(dest_mac), format_mac_address(src_mac)
     except Exception, e:
         logging.error(str(e))
@@ -40,8 +56,6 @@ def parsel3_metadata(packet):
         proto = int(iph[6])
         srcip = iph[8]
         destip = iph[9]
-        # payload = packet[header_length:]
-        # print '\t', protocol_dict[int(proto)], ':', socket.inet_ntoa(srcip), '->', socket.inet_ntoa(destip)
         return int(proto), socket.inet_ntoa(srcip), socket.inet_ntoa(destip), header_length
     except Exception, e:
         logging.error(str(e))
@@ -86,7 +100,6 @@ def format_mac_address(a):
 
 def monitor_traffic(iface):
     try:
-        # pcap = pcapy.open_live(iface, 65536, 1, 0)
         pcap = pcapy.open_live(iface, 1500, 1, 0)
         i = 0
         while(1):
@@ -95,18 +108,29 @@ def monitor_traffic(iface):
             proto_num, src_ip, dest_ip, hl = parsel3_metadata(packet[14:])
             protocol = parsel4_metadata(proto_num)
             l5 = parsel5_metadata(packet[14 + hl:], proto_num)
-            # Track unique: Source -> Destination pair
             nethash = hashlib.md5(src_ip+dest_ip).hexdigest()
             if (proto_num == 6) or (proto_num == 17):
-                # Track unique: Destination:Service
                 fingerprint = hashlib.md5(dest_ip+str(l5[1])).hexdigest()
-                print "SMAC:", src_mac, '->', 'DMAC:', dest_mac, 'srcIP:', src_ip, '->', 'destIP:', dest_ip, 'Protocol:', protocol, 'Layer5:', l5, 'NetHash:', nethash, 'fingerprint:', fingerprint
+                # print "SMAC:", src_mac, '->', 'DMAC:', dest_mac, 'srcIP:', src_ip, '->', 'destIP:', dest_ip, 'Protocol:', protocol, 'Layer5:', l5, 'NetHash:', nethash, 'fingerprint:', fingerprint
+                wtf('nalyzer.log', str("SMAC: " + src_mac + ' -> ' + 'DMAC: ' + dest_mac + ' srcIP: ' + src_ip + ' -> ' + 'destIP: ' + dest_ip + ' Protocol: ' + str(protocol) + ' Layer5: ' + str(l5) + ' NetHash: ' + nethash + ' fingerprint: ' + fingerprint +'\n'))
+                top_talker_source(src_ip)
             else:
-                print "SMAC:", src_mac, '->', 'DMAC:', dest_mac, 'srcIP:', src_ip, '->', 'destIP:', dest_ip, 'Protocol:', protocol, 'Layer5:', l5, 'NetHash:', nethash
+                # print "SMAC:", src_mac, '->', 'DMAC:', dest_mac, 'srcIP:', src_ip, '->', 'destIP:', dest_ip, 'Protocol:', protocol, 'Layer5:', l5, 'NetHash:', nethash
+                wtf('nalyzer.log', str("SMAC: " + src_mac + ' -> ' + 'DMAC: ' + dest_mac + ' srcIP: ' + src_ip + ' -> ' + 'destIP: ' + dest_ip + ' Protocol: ' + str(protocol) + ' Layer5: ' + str(l5) + ' NetHash: ' + nethash + '\n'))
+                top_talker_source(src_ip)
     except Exception, e:
         logging.warn(str(e))
     except KeyboardInterrupt:
         sys.exit(0)
+
+
+def top_talker_source(srcip):
+    if srcip in srcips:
+        srcips[srcip] += 1
+    else:
+        srcips[srcip] = 1
+    # print srcip, ':', srcips[srcip]
+    # print '\n', srcips
 
 
 def main(argv):
@@ -144,3 +168,4 @@ def main(argv):
 
 if __name__ == "__main__":
     main(sys.argv[1:])
+
